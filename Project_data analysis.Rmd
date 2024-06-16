@@ -1,0 +1,585 @@
+---
+title: 'STAT 6440: PROJECT DATA ANALYSIS'
+author: "group 4"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    code_folding: show
+    theme: lumen
+    toc: yes
+    toc_float: yes
+  word_document:
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list =ls())
+source("C:/Users/lutaa/Downloads/myfunctions.R")
+library(caret)
+library(tidyverse)
+```
+
+### **1. Data importation and partioning**
+
+#### **1.1 Data importation** 
+
+```{r}
+health = read.csv("D:/BGSU/STAT PROGRAM/5.SPRING 2024/STAT 6440/Project stuff/Project proposal/heart_failure_clinical_records_dataset.csv")
+head(health)
+```
+
+#### **1.2 Data Partitioning.**
+
+- We considered the 70 - 30 split for the training and test data respectively. 
+
+```{r}
+RNGkind (sample.kind = "Rounding") 
+set.seed(1)
+p2 <- partition.2(health, 0.7)
+training.data <- p2$data.train
+test.data <- p2$data.test
+
+```
+
+### **2. Data cleaning and transformation** 
+
+#### **2.1 on training set.**
+
+**Dealing with  missisng values**
+```{r}
+sum(is.na(training.data))
+```
+- We noted that the data set didn't have any missing values.
+
+**Checking for outliers**
+
+```{r}
+outlier = function(x){
+          Q1 <- quantile(x, .25)
+          Q3 <- quantile(x, .75)
+          iqr <- IQR(x)
+
+          outliers = as.vector(x< (Q1 - 1.5*iqr) | x >(Q3 + 1.5*iqr))
+          #return(outliers)
+          return (which(outliers == TRUE))
+}
+
+```
+
+```{r}
+results = list(c(NA), c(NA), c(NA), c(NA), c(NA), c(NA), c(NA), c(NA), c(NA), c(NA), c(NA), c(NA))
+for(i in 1:12){
+  variable = training.data[, i]
+  results[[i]] = (outlier(variable))
+}
+
+results
+```
+- We noticed that the variables "creatinine_phosphokinase", "ejection_fraction", "platelets", "serum_creatinine", and "serum_sodium" had outlier observations as summarized below.
+
+- outliers for "creatinine_phosphokinase"
+
+```{r}
+training.data[results[[3]],]
+```
+
+- outliers for ejection_fraction
+
+```{r}
+training.data[results[[5]],]
+```
+
+- outliers for platelets
+
+```{r}
+training.data[results[[7]],]
+```
+
+"serum_creatinine"
+
+```{r}
+training.data[results[[8]],]
+```
+
+"serum_sodium"
+```{r}
+training.data[results[[9]],]
+```
+
+Resolution for outliers:  we decided to maintain the observations identified as outliers due to limited subject expertise about the variables.
+
+**Transforming each variable to an appropriate class.**
+
+```{r}
+training.data$anaemia = as.factor(training.data$anaemia)
+training.data$diabetes = as.factor(training.data$diabetes)
+training.data$high_blood_pressure = as.factor(training.data$high_blood_pressure)
+training.data$sex = as.factor(training.data$sex)
+training.data$smoking = as.factor(training.data$smoking)
+training.data$DEATH_EVENT = as.factor(training.data$DEATH_EVENT)
+```
+
+- variables; anaemia, diabetes, high blood pressure, sex, smoking and death event were converted to categorical variables.
+
+#### 2.2 on test set.
+
+**Dealing with  missing values**
+```{r}
+sum(is.na(test.data))
+```
+- No missing values in the test set.
+
+**Transforming each variable to an appropriate class.**
+
+```{r}
+test.data$anaemia = as.factor(test.data$anaemia)
+test.data$diabetes = as.factor(test.data$diabetes)
+test.data$high_blood_pressure = as.factor(test.data$high_blood_pressure)
+test.data$sex = as.factor(test.data$sex)
+test.data$smoking = as.factor(test.data$smoking)
+test.data$DEATH_EVENT = as.factor(test.data$DEATH_EVENT)
+```
+
+
+### **3. Exploratory Data Analysis**
+
+#### **3.1 Data Visualization**
+
+- Distribution of death events
+
+```{r}
+par(mfrow = c(1, 2)) ## this will create a panel of 1 row and 2 columns
+death <- table(training.data$DEATH_EVENT)
+barplot(death, main = "Death counts", 
+        xlab="Death event", ylab = "Counts", col=c("blue","red"))
+
+death.prop <- prop.table( table(training.data$DEATH_EVENT))
+barplot(death.prop, main = "Proportion of Death Events", 
+        xlab="Death event", ylab = "proportion", col=c("blue","red"))
+```
+
+- The data is imbalanced with 30.1% of the observations having a death event and 69.9% not having a death event.
+
+**Relationship between the response and the predictors**
+
+i) Death event versus Age
+
+```{r}
+boxplot(training.data$age ~ training.data$DEATH_EVENT, 
+        xlab = "Death event", ylab = "Age", col=c("blue","red"),
+        main = "Box plot for Death Event vs Age")
+```
+
+- People who had a death event event during the study period had a higher median age than those who didn't.
+
+ii) Death event versus Anaemia
+
+```{r}
+death.by.anem <- prop.table(table(training.data$anaemia, training.data$DEATH_EVENT),
+                                     margin = 2)
+barplot(death.by.anem , main="Distribution of Anaemia by Death Event",
+        xlab="Death Event", ylab = "proportion", col=c("blue","red"),
+        legend = rownames(death.by.anem), beside=TRUE)
+
+```
+
+
+- Out of those who died during the study, the proportion of patients who had anaemia is slightly bigger than those who didn't have anaemia
+
+- Out of those who did not die during the study, the proportion of patients who had did not have anaemia is bigger than those who had  anaemia
+
+
+iii) Death event versus creatinine phosphokinase
+
+```{r}
+boxplot(training.data$creatinine_phosphokinase ~ training.data$DEATH_EVENT, 
+        xlab = "Death event", ylab = "creatinine phosphokinase", col=c("blue","red"), ylim  = c(0, 2000),
+        main = "Box plot for Death Event vs creatinine phosphokinase")
+```
+
+
+- creatinine phosphokinase seems to be insignificant because the median values are the same for both death and non-death event.
+
+
+iv) Death event versus Diabetes
+
+```{r}
+death.by.dia <- prop.table(table(training.data$diabetes, training.data$DEATH_EVENT),
+                                     margin = 2)
+barplot(death.by.dia , main="Distribution of Diabetes by Death Event",
+        xlab="Death Event", ylab = "proportion", col=c("blue","red"),
+        legend = rownames(death.by.dia), beside=TRUE)
+
+```
+
+- The distribution of diabetes looks similar in both cases with the proportion of those who didn't have diabetes dominate in each category of death event.
+
+
+v) Death event versus injection fraction
+
+```{r}
+boxplot(training.data$ejection_fraction ~ training.data$DEATH_EVENT, 
+        xlab = "Death event", ylab = "injection fraction", col=c("blue","red"),
+        main = "Box plot for Death Event vs injection fraction")
+```
+
+
+- The median injection fraction for those who dies is slightly lower than for those who didn't die. Also for those who died , most of them have injection fraction values below the median.
+
+
+vi) Death event versus High blood pressure
+
+```{r}
+death.by.hg <- prop.table(table(training.data$high_blood_pressure, training.data$DEATH_EVENT),
+                                     margin = 2)
+barplot(death.by.hg , main="Distribution of High blood pressure  by Death Event",
+        xlab="Death Event", ylab = "proportion", col=c("blue","red"),
+        legend = rownames(death.by.hg), beside=TRUE)
+
+```
+
+
+- Out of those who died during the study, the proportion of patients who had high blood pressure is slightly bigger than those who didn't have it. 
+
+- Out of those who did not die during the study, the proportion of patients who  did not have high blood pressure is bigger than those who had it.
+
+
+vii) Distribution of Death event versus platelets
+
+```{r}
+boxplot(training.data$platelets ~ training.data$DEATH_EVENT, 
+        xlab = "Death event", ylab = "Platelets", col=c("blue","red"),
+        main = "Box plot for Death Event vs Platelets")
+```
+
+
+- Platelets seems to be insignificant because the median values are the almost the same for both death and non-death event categories.
+
+viii) Diabetes versus serum creatinine
+
+```{r}
+boxplot(training.data$serum_creatinine ~ training.data$DEATH_EVENT, 
+        xlab = "Death event", ylab = "serum creatinine", col=c("blue","red"), ylim = c(0, 4),
+        main = "Box plot for Death Event vs serum creatinine")
+```
+
+
+ - People who had a death event event during the study period had a higher median serum creatinine than those who didn't.
+ 
+ ix) Diabetes versus serum sodium
+ 
+```{r}
+boxplot(training.data$serum_sodium ~ training.data$DEATH_EVENT, 
+        xlab = "Death event", ylab = "serum sodium", col=c("blue","red"),
+        main = "Box plot for Death Event vs serum sodium")
+```
+
+- Serum sodium seems to be insignificant because the median values are the almost the same for both death and non-death event categories.
+
+
+x) Diabetes versus Sex
+
+```{r}
+death.by.sex <- prop.table(table(training.data$sex, training.data$DEATH_EVENT),
+                                     margin = 2)
+barplot(death.by.sex , main="Distribution of Sex  by Death Event",
+        xlab="Death Event", ylab = "proportion", col=c("blue","red"),
+        legend = rownames(death.by.sex), beside=TRUE)
+
+```
+
+- The distributions look similar and in each case, males dominate. During the study more death events were male cases.
+
+xi) Death versus smoking
+
+```{r}
+death.by.sm <- prop.table(table(training.data$smoking, training.data$DEATH_EVENT),
+                                     margin = 2)
+barplot(death.by.sm , main="Distribution of Smoking by Death Event",
+        xlab="Death Event", ylab = "proportion", col=c("blue","red"),
+        legend = rownames(death.by.sm), beside=TRUE)
+
+```
+
+- The distribution are the same for death event categories. Noin smokers have a higher proporton in each category of death event. This may be due to the fact that most of the patients in the study were non smokers.
+
+
+
+#### **3.2 Correlation analysis among continous predictors.**
+
+```{r}
+pairs(training.data %>% select(age, ejection_fraction, platelets,serum_creatinine,serum_sodium, creatinine_phosphokinase))
+```
+
+
+- The continous predictors are pairwise decorrelated.
+
+
+#### **3.3 Initial variable selection.**
+
+- We decided to exclude the time variable in our data analysis and modeling because it would be unknown and uncontrollable in any application of the model.
+
+### **4. MODEL BUILDING**
+
+- Modeling involved fitting the following models: Logistic Regression, K-Nearest Neighbor (KNN), Decision Trees, and Random Forest.
+
+#### **4.1 Logistic Regression Model**
+
+Under logistic regression model, we considered the forward selection, backward selection, lasso and ridge regression.
+
+
+```{r}
+final_train  = training.data %>% select(-time)
+
+#training data set fpr KNN, RF and Classification Trees
+ train_knn = final_train
+train_knn =  train_knn %>% select(-c(anaemia, diabetes, high_blood_pressure, sex, smoking))
+train_knn$anaemia1 = ifelse(final_train$anaemia == "1", 1, 0)
+train_knn$diabetes1 = ifelse(final_train$diabetes == "1", 1, 0)
+train_knn$high_blood_pressure1 = ifelse(final_train$high_blood_pressure == "1", 1, 0)
+train_knn$sex1 = ifelse(final_train$sex == "1", 1, 0)
+train_knn$smoking1 = ifelse(final_train$smoking == "1", 1, 0)
+
+#test data set fpr KNN, RF and Classification Trees
+test_knn = test.data[, -12]
+test_knn = test_knn %>% select(-c(anaemia, diabetes, high_blood_pressure, sex, smoking))
+test_knn$anaemia1 = ifelse(test.data$anaemia == "1", 1, 0)
+test_knn$diabetes1 = ifelse(test.data$diabetes == "1", 1, 0)
+test_knn$high_blood_pressure1 = ifelse(test.data$high_blood_pressure == "1", 1, 0)
+test_knn$sex1 = ifelse(test.data$sex == "1", 1, 0)
+test_knn$smoking1 = ifelse(test.data$smoking == "1", 1, 0)
+```
+
+
+**Forward selection**
+
+```{r, results='hide'}
+
+
+set.seed(0)
+forward <- train(DEATH_EVENT ~ ., data = final_train, family = "binomial", trControl = trainControl(method="cv", number=10),
+                  method = "glmStepAIC", direction ="forward") 
+```
+
+```{r}
+forward
+```
+
+
+```{r}
+forward$finalModel
+```
+
+
+
+The final model is shown above with an AIC of 217.7
+
+
+**Backward selection**
+
+```{r, results='hide'}
+set.seed(0)
+backward <- train(DEATH_EVENT ~ ., data = final_train, family = "binomial", trControl = trainControl(method="cv", number=10),
+                  method = "glmStepAIC", direction ="backward") 
+```
+
+```{r}
+backward
+```
+
+```{r}
+backward$finalModel
+```
+- The model is the same as forward with the same AIC value of 217.7
+
+**Lasso Regreession**
+
+```{r, results='hide'}
+set.seed(0)
+train_control <- trainControl(method="cv", number=10)
+lasso = train(DEATH_EVENT ~ ., data = final_train, method = "glmnet",
+                      family = "binomial", trControl = train_control, metric = 'Kappa',
+                      tuneGrid = expand.grid(alpha = 1,lambda = 10^seq(-4,4,by = 0.5)))
+```
+
+```{r}
+lasso$results[lasso$results$lambda == lasso$bestTune$lambda, ]
+
+```
+- Optimal lambda  = `r lasso$bestTune$lambda`
+
+```{r}
+lasso_final = coef(lasso$finalModel, lasso$bestTune$lambda)
+lasso_final
+```
+**Ridge Regreession**
+
+```{r}
+set.seed(0)
+train_control <- trainControl(method="cv", number=10)
+ridge = train(DEATH_EVENT ~ ., data = final_train, method = "glmnet",
+                      family = "binomial", trControl = train_control, metric = 'Kappa',
+                      tuneGrid = expand.grid(alpha = 0,lambda = 10^seq(-4,4,by = 0.5)))
+```
+
+```{r}
+ridge$results[ridge$results$lambda == ridge$bestTune$lambda, ]
+
+```
+
+```{r}
+ridge_final = coef(ridge$finalModel, ridge$bestTune$lambda)
+ridge_final
+```
+
+
+**Comparing the 4 Logistic models by their Kappa**
+
+```{r}
+models = c('Forward selection', 'Backward Selection', 'Lasso Regression', 'Ridge Regression')
+Kappa_val = c(0.2089784, 0.1977942, 0.2552274, 0.2660134)
+comp = data.frame("Model" = models, "Kappa" = Kappa_val)
+comp
+```
+
+*Conclusion: The best logistic regression model is the one proposed by Ridge regression since it yields the highest Kappa value.*
+
+
+#### **4.2 KNN**
+
+```{r}
+set.seed(0)
+
+train_control <- trainControl(method = "cv", number = 10) 
+
+Knn_kcv <- train( DEATH_EVENT~ ., data = train_knn, method = "knn", 
+                 trControl = train_control, preProcess = c("center","scale"), 
+                 tuneGrid = data.frame(k = c(1:10, seq(15, 55, 5))), metric = "Kappa")
+```
+
+```{r}
+print(Knn_kcv)
+```
+- The optimal k = `r Knn_kcv$bestTune`
+
+```{r}
+plot(Knn_kcv)
+```
+```{r}
+Knn_kcv$finalModel
+```
+
+#### **4.3 Classification Trees**
+
+- We used cost complexity pruning to find the optimal tree structure through cross validation.
+
+```{r}
+library(rpart)
+library(rpart.plot)
+set.seed(0)
+train_control <- trainControl(method="cv", number=10)
+cv.ct <- train(DEATH_EVENT~ . , data = train_knn, method = "rpart",
+                   trControl = train_control, tuneLength = 20)
+
+```
+
+
+```{r}
+print(cv.ct)
+```
+- Optimal pruned tree is obtained with cp = `r cv.ct$bestTune`
+
+```{r}
+plot(cv.ct)
+```
+
+
+```{r}
+library(rattle)
+fancyRpartPlot(cv.ct$finalModel, cex = 0.7)
+```
+
+**Variable importance**
+
+```{r}
+cv.ct$finalModel$variable.importance
+```
+
+
+#### **4.4 Random Forest**
+
+```{r}
+set.seed(0)
+rf <- train(DEATH_EVENT ~ . , data = train_knn, method = "rf", tuneLength = 15, metric = "Kappa" )
+```
+
+```{r}
+print(rf)
+```
+- The optimal mtry (number of predictors to use at each split) = 7
+
+```{r}
+plot(varImp(rf))
+```
+```{r}
+rf$finalModel
+```
+### **5. Model Perfromance Evaluation on Test set**
+
+- *Since the data set is imbalanced, we used a lower cut off of 0.35 so that we can increase the rate of detecting the minority class.*
+
+#### **5.1 Ridge Logistic Regression Model performance**
+
+```{r}
+pred.prob.ridge <- predict(ridge, s = ridge$bestTune, test.data, type = "prob")
+pred.y.ridge <- ifelse(pred.prob.ridge[,2] > 0.35, 1, 0) # using cutoff = 0.5
+confusionMatrix(as.factor(pred.y.ridge), as.factor(test.data$DEATH_EVENT), 
+                positive = "1")
+
+```
+
+#### **5.2 4-NN Model performance**
+
+```{r}
+pred.prob.knn <- predict(Knn_kcv, test_knn, type = "prob")
+pred.y.knn <- ifelse(pred.prob.knn[,2] > 0.35, 1, 0) # using cutoff = 0.35
+confusionMatrix(as.factor(pred.y.knn), as.factor(test.data$DEATH_EVENT), 
+                positive = "1")
+```
+#### **5.3 Classification Tree Model performance**
+
+```{r}
+pred.test.prune = predict(cv.ct$finalModel, test_knn, type = 'prob')
+vls = ifelse(pred.test.prune[,2] > 0.35, 1, 0)
+# create confusion matrix
+confusionMatrix(as.factor(vls), test.data$DEATH_EVENT, positive = "1")
+```
+
+#### **5.4 Random Forest**
+
+```{r}
+pred.test.rf = predict(rf$finalModel, test_knn, type = 'prob')
+
+rf_prob = ifelse(pred.test.rf[,2] > 0.35, 1, 0)
+# create confusion matrix
+confusionMatrix(as.factor(rf_prob), test.data$DEATH_EVENT, positive = "1")
+```
+
+
+### **6. MODEL COMPARISON**
+
+- Models were compared based on the following metrics; Accuracy, Kappa, Sensitivity and Specificity.
+
+```{r}
+m = c("Ridge- Logistic Regression", "4-NN", "Classification Trees", "Random Forest")
+Accuracy = c(0.7556, 0.6667, 0.7889 , 0.7000)
+Kappa = c(0.4992, 0.1892, 0.5649, 0.3817 )
+Sensitivity = c(0.7879, 0.2727, 0.8182, 0.6970 )
+Specificity = c(0.7368, 0.8947, 0.7719, 0.7018)
+
+data.frame("Model Name" = m, "Accuracy" = Accuracy, "Kappa" = Kappa, "Sensitivity" = Sensitivity, "Specificity" =  Specificity)
+```
+
+
+- Based on the summary above, we recommend the Classification Tree as the best model since it yields the best results across 3 performance metrics. 
